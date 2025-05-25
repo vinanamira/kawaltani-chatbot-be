@@ -12,6 +12,17 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Riwayat2Controller;
 use App\Http\Controllers\TanamanController;
 use App\Http\Controllers\ChatbotController;
+use App\Http\Controllers\RingkasanDataController; 
+use App\Http\Controllers\UserSiteController;
+
+Route::middleware('auth:sanctum')->get('/user/sites', [UserSiteController::class, 'index']);
+
+// Route::middleware('auth:sanctum')->get('/dashboard', [DashboardController::class, 'index']);
+// Route::get('realtime', [RealtimeController::class, 'index']);
+Route::middleware('auth:sanctum')->get('/realtime', [RealtimeController::class, 'index']);
+Route::middleware('auth:sanctum')->post('/riwayat2', [Riwayat2Controller::class, 'index']);
+// Route::post('riwayat', [RiwayatController::class, 'index']);
+// Route::post('riwayat2', [Riwayat2Controller::class, 'index']);
 
 Route::get('dashboard', [DashboardController::class, 'index']);
 Route::get('realtime', [RealtimeController::class, 'index']);
@@ -36,21 +47,20 @@ Route::post('/tanaman', [TanamanController::class, 'store']);
 Route::put('/tanaman/{pl_id}', [TanamanController::class, 'update']);
 Route::delete('/tanaman/{pl_id}', [TanamanController::class, 'destroy']); 
 
-// Route::post('/login', [AuthController::class, 'login']);
-// Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
-// Route::middleware('auth:sanctum')->get('/profile', [AuthController::class, 'show']);
+Route::post('/login', [AuthController::class, 'login']);
+Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
+Route::middleware('auth:sanctum')->get('/profile', [AuthController::class, 'show']);
+Route::middleware('auth:sanctum')->get('/dashboard', [DashboardController::class, 'index']);
 
-// Route::post('/register', [RegisterController::class, 'register']);
 
-// Route::post('/:user_id/chat/send', [ChatbotController::class, 'send']);
+Route::post('/register', [RegisterController::class, 'register']);
+
+Route::middleware('auth:sanctum')->group(function () {
 Route::post('/chat/send', [ChatbotController::class, 'send']);
 Route::get('/chat/history/{name_chat}', [ChatbotController::class, 'getHistoryByNameChat']);
 Route::delete('/chat/history/{name_chat}', [ChatbotController::class, 'deleteByNameChat']);
 Route::get('/chat/names', [ChatbotController::class, 'listChats']);
 Route::put('/chat/rename-chat/{name_chat}', [ChatbotController::class, 'renameChat']);
 Route::post('/chat/new', [ChatbotController::class, 'newChat']);
-
-// Ini kalau udah ada login
-// Route::middleware('auth:sanctum')->group(function () {
-//     Route::get('/chat/history', [ChatbotController::class, 'history']);
-// });
+Route::post('/data/summary', [RingkasanDataController::class, 'getSummary']);
+});

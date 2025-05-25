@@ -13,7 +13,7 @@ class Chatbot extends Model
     protected $table = 'chatbot';
 
     protected $fillable = [
-        // 'user_id',
+        'user_id',
         'name_chat',
         'message',
         'response',

@@ -66,7 +66,7 @@ return [
     */
 
     'timezone' => 'Asia/Jakarta', // Pastikan ini diatur dengan benar
-    
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration
@@ -123,6 +123,6 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
-    'OpenAI' => OpenAI\Laravel\Facades\OpenAI::class,
+    OpenAI\Laravel\ServiceProvider::class,
 
 ];

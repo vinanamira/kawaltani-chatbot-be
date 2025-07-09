@@ -37,29 +37,24 @@ class ChatbotController extends Controller
             return $this->handleDataQuery($message, $chatName, $user);
         }
 
-        // Langsung kirim ke OpenAI
         $response = $this->sendGeneralMessageToOpenAI($message);
 
-        // Cek session
         $session = ChatSession::where('user_id', $user->user_id)
             ->where('name_chat', $chatName)
             ->first();
 
         if (! $session) {
-            // Buat session baru jika belum ada
             $session = ChatSession::create([
                 'user_id' => $user->user_id,
                 'name_chat' => $chatName,
             ]);
         }
 
-        // Simpan pesan user
         $messageModel = ChatUser::create([
             'session_id' => $session->session_id,
             'message' => $message,
         ]);
 
-        // Simpan response AI
         ChatResponse::create([
             'mess_id' => $messageModel->mess_id,
             'response' => $response,
@@ -241,14 +236,12 @@ class ChatbotController extends Controller
         $message = strtolower($message);
         $today = now();
 
-        // Deteksi kata relatif
         if (str_contains($message, 'hari ini')) {
             return $today->toDateString(); // format Y-m-d
         } elseif (str_contains($message, 'kemarin')) {
             return $today->subDay()->toDateString();
         }
 
-        // Peta bulan
         $bulanMap = [
             'januari' => '01',
             'februari' => '02',
@@ -264,7 +257,7 @@ class ChatbotController extends Controller
             'desember' => '12',
         ];
 
-        // ✳️ Cek format lengkap: "12 juli 2024"
+        // Format lengkap: Contoh "19 Mei 2025"
         foreach ($bulanMap as $bulanText => $bulanAngka) {
             if (preg_match("/(\d{1,2})\s+$bulanText\s+(\d{4})/", $message, $match)) {
                 $day = str_pad($match[1], 2, '0', STR_PAD_LEFT);
@@ -273,7 +266,7 @@ class ChatbotController extends Controller
             }
         }
 
-        // ✳️ Cek format "12 juli" (tanpa tahun)
+        // Format tanpa tahun: Contoh "19 Mei"
         foreach ($bulanMap as $bulanText => $bulanAngka) {
             if (preg_match("/(\d{1,2})\s+$bulanText/", $message, $match)) {
                 $day = str_pad($match[1], 2, '0', STR_PAD_LEFT);
@@ -282,7 +275,7 @@ class ChatbotController extends Controller
             }
         }
 
-        // ✳️ Format angka: "12/07/2024" atau "12-07-2024"
+        // Format angka: "12/07/2024" atau "12-07-2024"
         if (preg_match("/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/", $message, $match)) {
             $day = str_pad($match[1], 2, '0', STR_PAD_LEFT);
             $month = str_pad($match[2], 2, '0', STR_PAD_LEFT);
@@ -290,7 +283,7 @@ class ChatbotController extends Controller
             return "$year-$month-$day";
         }
 
-        // ✳️ Format angka: "12/07" atau "12-07" tanpa tahun
+        // Format angka: "12/07" atau "12-07" tanpa tahun
         if (preg_match("/(\d{1,2})[\/\-](\d{1,2})/", $message, $match)) {
             $day = str_pad($match[1], 2, '0', STR_PAD_LEFT);
             $month = str_pad($match[2], 2, '0', STR_PAD_LEFT);
@@ -298,7 +291,7 @@ class ChatbotController extends Controller
             return "$year-$month-$day";
         }
 
-        return null; // Tidak ditemukan
+        return null; 
     }
 
     public function getHistoryByNameChat($nameChat): JsonResponse
@@ -398,7 +391,6 @@ class ChatbotController extends Controller
         }
 
         try {
-            // Cek apakah nama baru sudah dipakai oleh user yang sama
             $isExist = ChatSession::where('user_id', $user->user_id)
                 ->where('name_chat', $request->newName)
                 ->exists();
@@ -407,7 +399,6 @@ class ChatbotController extends Controller
                 return response()->json(['error' => 'Nama chat sudah digunakan oleh Anda'], 422);
             }
 
-            // Ambil sesi yang akan diganti
             $session = ChatSession::where('user_id', $user->user_id)
                 ->where('name_chat', $nameChat)
                 ->first();
@@ -448,7 +439,6 @@ class ChatbotController extends Controller
         $chatName = Str::limit($message, 40, '...');
 
         try {
-            // Kirim ke OpenAI
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->post('https://api.openai.com/v1/chat/completions', [
@@ -461,19 +451,16 @@ class ChatbotController extends Controller
 
             $reply = $response['choices'][0]['message']['content'] ?? 'Tidak ada balasan.';
 
-            // Buat session baru
             $session = ChatSession::create([
                 'user_id'   => $userId,
                 'name_chat' => $chatName,
             ]);
 
-            // Simpan pesan user
             $messageModel = ChatUser::create([
                 'session_id' => $session->session_id,
                 'message'    => $message,
             ]);
 
-            // Simpan balasan AI
             ChatResponse::create([
                 'mess_id'  => $messageModel->mess_id,
                 'response' => $reply,

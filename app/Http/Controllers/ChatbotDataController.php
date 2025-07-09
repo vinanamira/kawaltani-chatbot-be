@@ -395,7 +395,7 @@ class ChatbotDataController extends Controller
 
         } else {
             Log::error("Failed to fetch realtime data from backend: " . $apiResponse->body());
-            return "Maaf, saya gagal mengambil data terkini dari sistem KawalTani. Silakan coba lagi nanti. Error: " . ($apiResponse->json()['message'] ?? 'Terjadi kesalahan tidak dikenal.');
+            return "Maaf, saya gagal mengambil data dari database. Silakan coba lagi nanti. Error: " . ($apiResponse->json()['message'] ?? 'Terjadi kesalahan tidak dikenal.');
         }
     }
 }

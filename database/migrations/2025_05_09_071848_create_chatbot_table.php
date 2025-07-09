@@ -8,7 +8,6 @@ return new class extends Migration {
     public function up(): void
     {
         Schema::create('chatbot', function (Blueprint $table) {
-            $table->id();
             $table->string('user_id', 32); 
             $table->text('message');
             $table->text('response');

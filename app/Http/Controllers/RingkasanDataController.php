@@ -217,7 +217,7 @@ class RingkasanDataController extends Controller
 
             // 6. Berikan Respons API
             if (empty($summaryData)) {
-                return response()->json(['message' => 'Tidak ada data ringkasan untuk rentang waktu, site, area, dan sensor yang dipilih.'], 404);
+                return response()->json(['message' => 'Tidak ada data ringkasan untuk rentang waktu, site, area, dan sensor yang dipilih.'], 204);
             }
 
             // return response()->json($summaryData, 200, [], JSON_PRETTY_PRINT);

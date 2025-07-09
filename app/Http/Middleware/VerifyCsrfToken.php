@@ -13,8 +13,13 @@ class VerifyCsrfToken
      *
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */
-    public function handle(Request $request, Closure $next): Response
+    public function handle(Request $request, Closure $next)
     {
+        if (! $request->bearerToken()) {
+            return response()->json([
+                'message' => 'Unauthenticated. Silakan login terlebih dahulu.'
+            ], 401);
+        }
         return $next($request);
     }
 }

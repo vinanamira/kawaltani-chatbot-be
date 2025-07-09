@@ -6,6 +6,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use App\Models\Chatbot;
+use App\Models\ChatSession;
+use App\Models\ChatUser;
+use App\Models\ChatResponse;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -34,11 +37,28 @@ class ChatbotController extends Controller
         // Langsung kirim ke OpenAI
         $response = $this->sendGeneralMessageToOpenAI($message);
 
-        // Simpan chat ke database
-        Chatbot::create([
-            'user_id' => $user->user_id,
-            'name_chat' => $chatName,
+        // Cek session
+        $session = ChatSession::where('user_id', $user->user_id)
+            ->where('name_chat', $chatName)
+            ->first();
+
+        if (! $session) {
+            // Buat session baru jika belum ada
+            $session = ChatSession::create([
+                'user_id' => $user->user_id,
+                'name_chat' => $chatName,
+            ]);
+        }
+
+        // Simpan pesan user
+        $messageModel = ChatUser::create([
+            'session_id' => $session->session_id,
             'message' => $message,
+        ]);
+
+        // Simpan response AI
+        ChatResponse::create([
+            'mess_id' => $messageModel->mess_id,
             'response' => $response,
         ]);
 
@@ -97,16 +117,24 @@ class ChatbotController extends Controller
                 ], 401);
             }
 
-            $history = Chatbot::where('user_id', $user->user_id)
+            $session = ChatSession::where('user_id', $user->user_id)
                 ->where('name_chat', $nameChat)
-                ->orderBy('created_at')
-                ->get();
+                ->with(['messages.response']) // eager load semua pesan & balasannya
+                ->first();
 
-            if ($history->isEmpty()) {
-                return response()->json([], 204);
+            if (!$session) {
+                return response()->json(null, 204); // No Content
             }
 
-            return response()->json($history);
+            $data = $session->messages->map(function ($message) {
+                return [
+                    'message' => $message->message,
+                    'response' => $message->response->response ?? null,
+                    'sent_at' => $message->created_at,
+                ];
+            });
+
+            return response()->json($data);
         } catch (\Exception $e) {
             Log::error("Database Error on getHistoryByNameChat: " . $e->getMessage());
             return response()->json([
@@ -115,8 +143,33 @@ class ChatbotController extends Controller
         }
     }
 
-
     public function deleteByNameChat($nameChat): JsonResponse
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated. Silakan login terlebih dahulu.'], 401);
+        }
+
+        try {
+            $session = ChatSession::where('user_id', $user->user_id)
+                ->where('name_chat', $nameChat)
+                ->first();
+
+            if (!$session) {
+                return response()->json(['message' => 'Sesi chat tidak ditemukan.'], 404);
+            }
+
+            $session->delete(); // Akan otomatis hapus pesan & response karena pakai ON DELETE CASCADE
+
+            return response()->json(['message' => 'Percakapan berhasil dihapus.']);
+        } catch (\Exception $e) {
+            Log::error("Delete Chat Error: " . $e->getMessage());
+            return response()->json(['message' => 'Terjadi kesalahan saat menghapus sesi chat.'], 500);
+        }
+    }
+
+
+    public function listChats(): JsonResponse
     {
         $user = Auth::user();
         if (!$user) {
@@ -125,34 +178,16 @@ class ChatbotController extends Controller
             ], 401);
         }
 
-        Chatbot::where('user_id', $user->user_id)
-            ->where('name_chat', $nameChat)
-            ->delete();
-
-        return response()->json(['message' => 'Percakapan berhasil dihapus']);
-    }
-
-    public function listChats(): JsonResponse
-    {
         try {
-            $user = Auth::user();
-            if (! $user) {
-                return response()->json([
-                    'message' => 'Unauthenticated. Silakan login terlebih dahulu.'
-                ], 401);
-            }
+            $chats = ChatSession::where('user_id', $user->user_id)
+                ->orderByDesc('updated_at')
+                ->get(['session_id', 'name_chat', 'updated_at']); // hanya ambil kolom yang dibutuhkan
 
-            $latestChats = Chatbot::selectRaw('MAX(id) as id, name_chat, MAX(created_at) as created_at')
-                ->where('user_id', $user->user_id)
-                ->groupBy('name_chat')
-                ->orderByDesc('created_at')
-                ->get();
-
-            return response()->json($latestChats);
+            return response()->json($chats);
         } catch (\Exception $e) {
-            Log::error("Database KawalTani Chatbot Error: " . $e->getMessage() . " in " . $e->getFile() . " line " . $e->getLine());
+            Log::error("ListChats Error: " . $e->getMessage());
             return response()->json([
-                'message' => 'Terjadi kesalahan saat mengambil riwayat chat. Silakan coba lagi.'
+                'message' => 'Gagal mengambil daftar chat.'
             ], 500);
         }
     }
@@ -165,20 +200,36 @@ class ChatbotController extends Controller
 
         $user = Auth::user();
         if (!$user) {
-            return response()->json([
-                'message' => 'Unauthenticated. Silakan login terlebih dahulu.'
-            ], 401);
+            return response()->json(['message' => 'Unauthenticated. Silakan login terlebih dahulu.'], 401);
         }
 
-        if (Chatbot::where('user_id', $user->user_id)->where('name_chat', $request->newName)->exists()) {
-            return response()->json(['error' => 'Nama chat sudah digunakan oleh Anda'], 422);
+        try {
+            // Cek apakah nama baru sudah dipakai oleh user yang sama
+            $isExist = ChatSession::where('user_id', $user->user_id)
+                ->where('name_chat', $request->newName)
+                ->exists();
+
+            if ($isExist) {
+                return response()->json(['error' => 'Nama chat sudah digunakan oleh Anda'], 422);
+            }
+
+            // Ambil sesi yang akan diganti
+            $session = ChatSession::where('user_id', $user->user_id)
+                ->where('name_chat', $nameChat)
+                ->first();
+
+            if (!$session) {
+                return response()->json(['message' => 'Sesi chat tidak ditemukan.'], 404);
+            }
+
+            $session->name_chat = $request->newName;
+            $session->save();
+
+            return response()->json(['message' => 'Nama chat berhasil diganti.']);
+        } catch (\Exception $e) {
+            Log::error("Rename Chat Error: " . $e->getMessage());
+            return response()->json(['message' => 'Gagal mengganti nama sesi chat.'], 500);
         }
-
-        Chatbot::where('user_id', $user->user_id)
-            ->where('name_chat', $nameChat)
-            ->update(['name_chat' => $request->newName]);
-
-        return response()->json(['message' => 'Nama chat berhasil diganti']);
     }
 
     public function newChat(Request $request): JsonResponse
@@ -203,6 +254,7 @@ class ChatbotController extends Controller
         $chatName = Str::limit($message, 40, '...');
 
         try {
+            // Kirim ke OpenAI
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->post('https://api.openai.com/v1/chat/completions', [
@@ -214,23 +266,34 @@ class ChatbotController extends Controller
             ]);
 
             $reply = $response['choices'][0]['message']['content'] ?? 'Tidak ada balasan.';
+
+            // Buat session baru
+            $session = ChatSession::create([
+                'user_id'   => $userId,
+                'name_chat' => $chatName,
+            ]);
+
+            // Simpan pesan user
+            $messageModel = ChatUser::create([
+                'session_id' => $session->session_id,
+                'message'    => $message,
+            ]);
+
+            // Simpan balasan AI
+            ChatResponse::create([
+                'mess_id'  => $messageModel->mess_id,
+                'response' => $reply,
+            ]);
+
+            return response()->json([
+                'name_chat' => $chatName,
+                'response'  => $reply,
+            ]);
         } catch (\Exception $e) {
             Log::error("OpenAI Call Error in newChat: " . $e->getMessage());
-            $reply = 'Maaf, saya KawalTani sedang mengalami masalah untuk menghubungi AI utama. Silakan coba lagi nanti.';
+            return response()->json([
+                'message' => 'Maaf, KawalTani sedang mengalami masalah teknis. Silakan coba lagi nanti.'
+            ], 500);
         }
-
-        Chatbot::create([
-            'user_id'   => $userId,
-            'name_chat' => $chatName,
-            'message'   => $message,
-            'response'  => $reply,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        return response()->json([
-            'name_chat' => $chatName,
-            'response'  => $reply,
-        ]);
     }
 }

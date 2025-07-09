@@ -114,4 +114,54 @@ class Riwayat2Controller extends Controller
 
         return response()->json($result);
     }
+
+    // Codingan Dibawah Hanya Untuk Keperluan di Fitur Chatbot
+    public static function getSensorData($userId, $date = null)
+    {
+        // Ambil site_id berdasarkan user_id
+        $siteId = DB::table('tm_device')
+            ->where('user_id', $userId)
+            ->value('site_id');
+
+        if (!$siteId) {
+            Log::warning("📛 Site ID tidak ditemukan untuk user_id: " . $userId);
+            return [];
+        }
+
+        // Ambil seluruh sensor ID untuk site ini
+        $sensorIds = DB::table('td_device_sensors')
+            ->join('tm_device', 'tm_device.dev_id', '=', 'td_device_sensors.dev_id')
+            ->where('tm_device.site_id', $siteId)
+            ->pluck('td_device_sensors.ds_id');
+
+        if ($sensorIds->isEmpty()) {
+            Log::warning("📛 Tidak ada sensor ditemukan di site: " . $siteId);
+            return [];
+        }
+
+        $query = DB::table('tm_sensor_read')
+            ->whereIn('ds_id', $sensorIds);
+
+        if ($date) {
+            $query->whereDate('read_date', $date);
+        }
+
+        $rawData = $query->orderBy('read_date', 'desc')->get();
+
+        // Mapping menjadi array struktur yang enak dibaca oleh AI
+        $result = $rawData->map(function ($item) {
+            $sensorName = DB::table('td_device_sensors')
+                ->where('ds_id', $item->ds_id)
+                ->value('ds_name');
+
+            return [
+                'tanggal' => Carbon::parse($item->read_date)->toDateString(),
+                'waktu' => Carbon::parse($item->read_date)->format('H:i'),
+                'sensor' => $sensorName ?? $item->ds_id,
+                'nilai' => round($item->read_value, 2),
+            ];
+        });
+
+        return $result;
+    }
 }

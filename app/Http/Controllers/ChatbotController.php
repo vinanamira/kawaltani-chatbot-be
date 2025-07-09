@@ -34,6 +34,10 @@ class ChatbotController extends Controller
         $message = $request->input('message');
         $chatName = $request->name_chat ?? Str::limit($request->message, 40, '...');
 
+        if ($this->isDataQuery($message)) {
+            return $this->handleDataQuery($message, $chatName, $user);
+        }
+
         // Langsung kirim ke OpenAI
         $response = $this->sendGeneralMessageToOpenAI($message);
 
@@ -106,6 +110,225 @@ class ChatbotController extends Controller
         }
     }
 
+    private function isDataQuery(string $message): bool
+    {
+        $keywords = [
+            'suhu',
+            'kelembaban',
+            'ph tanah',
+            'kondisi lahan',
+            'kondisi tanaman',
+            'cuaca',
+            'ringkasan',
+            'hari ini',
+            'kemarin',
+            'berapa derajat',
+            'berapa kelembaban',
+            'berapa ph',
+            'kadar air',
+            'sensor',
+            'data lahan',
+            'hujan',
+            'kondisi sekarang',
+            'kondisi saat ini',
+            'nilai tertinggi',
+            'nilai terendah',
+            'siram',
+            'butuh air',
+            'kondisi sawah'
+        ];
+
+        $lowerMessage = strtolower($message);
+
+        foreach ($keywords as $keyword) {
+            if (str_contains($lowerMessage, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function handleDataQuery(string $message, string $chatName, $user): JsonResponse
+    {
+        try {
+            // 🔍 Ekstraksi tanggal dari pesan (jika ada)
+            $date = $this->extractDateFromMessage($message);
+            Log::info("📅 Tanggal yang diekstrak dari pesan: " . ($date ?? 'tidak ada'));
+
+            // Ambil data sensor dari Riwayat2Controller
+            $sensorData = \App\Http\Controllers\Riwayat2Controller::getSensorData($user->user_id, $date);
+
+            if (empty($sensorData)) {
+                return response()->json([
+                    'message' => 'Data sensor tidak ditemukan untuk waktu yang dimaksud.'
+                ], 204); // Sesuai whitebox: No Content
+            }
+
+            // Mapping keyword -> ds_param
+            $keywordMap = [
+                'soil_temp'  => ['suhu', 'panas', 'derajat'],
+                'soil_hum'   => ['lembab', 'kelembaban', 'kelembapan'],
+                'soil_ph'    => ['ph', 'keasaman', 'asam'],
+                'soil_nitro' => ['nitrogen'],
+                'soil_phos'  => ['fosfor'],
+                'soil_pot'   => ['kalium'],
+                'soil_con'   => ['ec', 'konduktivitas'],
+                'soil_tds'   => ['tds'],
+                'soil_salin' => ['salinitas'],
+            ];
+
+            $foundParam = null;
+            foreach ($keywordMap as $param => $aliases) {
+                foreach ($aliases as $alias) {
+                    if (Str::contains(Str::lower($message), $alias)) {
+                        $foundParam = $param;
+                        break 2;
+                    }
+                }
+            }
+
+            
+
+            // Cek jika pertanyaan minta ringkasan seluruh kondisi
+            if (Str::contains(Str::lower($message), 'kondisi lahan') || Str::contains(Str::lower($message), 'kondisi sawah')) {
+                $summary = collect($sensorData)->map(function ($data) {
+                    return "- " . $this->paramToLabel($data['sensor']) . ": {$data['nilai']}";
+                })->implode("\n");
+
+                $tanggal = $sensorData[0]['tanggal'] ?? ($date ?? 'hari ini');
+                $formattedResponse = "Berikut ringkasan kondisi lahan pada tanggal $tanggal:\n" . $summary;
+
+                // Simpan ke DB
+                $session = ChatSession::firstOrCreate([
+                    'user_id' => $user->user_id,
+                    'name_chat' => $chatName,
+                ]);
+
+                $chatUser = ChatUser::create([
+                    'session_id' => $session->session_id,
+                    'message' => $message,
+                ]);
+
+                ChatResponse::create([
+                    'mess_id' => $chatUser->mess_id,
+                    'response' => $formattedResponse,
+                ]);
+
+                return response()->json([
+                    'message' => $message,
+                    'response' => $formattedResponse,
+                    'name_chat' => $chatName,
+                ]);
+            }
+
+            // Temukan data sensor dari array hasil getSensorData()
+            $foundData = collect($sensorData)->firstWhere('sensor', $foundParam);
+
+            if (!$foundData) {
+                return response()->json([
+                    'message' => 'Data sensor tidak ditemukan untuk waktu tersebut.'
+                ], 204);
+            }
+
+            $formattedResponse = "Baik, nilai rata-rata untuk " . $this->paramToLabel($foundParam) .
+                " pada tanggal {$foundData['tanggal']} pukul {$foundData['waktu']} adalah {$foundData['nilai']}.";
+
+            // Simpan percakapan
+            $session = ChatSession::firstOrCreate([
+                'user_id' => $user->user_id,
+                'name_chat' => $chatName,
+            ]);
+
+            $chatUser = ChatUser::create([
+                'session_id' => $session->session_id,
+                'message' => $message,
+            ]);
+
+            ChatResponse::create([
+                'mess_id' => $chatUser->mess_id,
+                'response' => $formattedResponse,
+            ]);
+
+            return response()->json([
+                'message' => $message,
+                'response' => $formattedResponse,
+                'name_chat' => $chatName,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error("handleDataQuery Error: " . $e->getMessage());
+            return response()->json([
+                'message' => 'Maaf, sistem mengalami masalah saat memproses pertanyaan berbasis data.'
+            ], 500);
+        }
+    }
+
+    // Untuk menjadikan label yang lebih natural
+    private function paramToLabel(string $param): string
+    {
+        $labels = [
+            'soil_temp' => 'suhu tanah',
+            'soil_hum' => 'kelembaban tanah',
+            'soil_ph' => 'pH tanah',
+            'soil_nitro' => 'kandungan nitrogen',
+            'soil_phos' => 'kandungan fosfor',
+            'soil_pot' => 'kandungan kalium',
+            'soil_con' => 'EC (konduktivitas listrik)',
+            'soil_tds' => 'TDS',
+            'soil_salin' => 'salinitas tanah',
+        ];
+
+        return $labels[$param] ?? $param;
+    }
+
+    private function extractDateFromMessage(string $message): ?string
+    {
+        $message = strtolower($message);
+        $today = now();
+
+        // Deteksi kata relatif
+        if (str_contains($message, 'hari ini')) {
+            return $today->toDateString(); // format Y-m-d
+        } elseif (str_contains($message, 'kemarin')) {
+            return $today->subDay()->toDateString();
+        }
+
+        // Coba cari pola tanggal eksplisit
+        // Pola: 2 Juli, 02 Juli, 2/07, 02/07, dll
+        $bulanMap = [
+            'januari' => '01',
+            'februari' => '02',
+            'maret' => '03',
+            'april' => '04',
+            'mei' => '05',
+            'juni' => '06',
+            'juli' => '07',
+            'agustus' => '08',
+            'september' => '09',
+            'oktober' => '10',
+            'november' => '11',
+            'desember' => '12',
+        ];
+
+        // Contoh cocokkan "2 juli" atau "02 juli"
+        foreach ($bulanMap as $bulanText => $bulanAngka) {
+            if (preg_match("/(\d{1,2})\s+$bulanText/", $message, $match)) {
+                $day = str_pad($match[1], 2, '0', STR_PAD_LEFT);
+                $year = now()->year;
+                return "$year-$bulanAngka-$day";
+            }
+        }
+
+        // Contoh cocokkan "2/7" atau "02/07"
+        if (preg_match("/(\d{1,2})[\/\-](\d{1,2})/", $message, $match)) {
+            $day = str_pad($match[1], 2, '0', STR_PAD_LEFT);
+            $month = str_pad($match[2], 2, '0', STR_PAD_LEFT);
+            $year = now()->year;
+            return "$year-$month-$day";
+        }
+
+        return null; // Tidak ditemukan
+    }
 
     public function getHistoryByNameChat($nameChat): JsonResponse
     {

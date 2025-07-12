@@ -75,5 +75,4 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/chat/names', [ChatbotController::class, 'listChats']);
     Route::put('/chat/rename-chat/{name_chat}', [ChatbotController::class, 'renameChat']);
     Route::post('/chat/new', [ChatbotController::class, 'newChat']);
-    Route::post('/data/summary', [RingkasanDataController::class, 'getSummary']);
 });

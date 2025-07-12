@@ -77,7 +77,7 @@ class ChatbotController extends Controller
             ])->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'ft:gpt-3.5-turbo-0125:personal:kawaltani-v2:BgSwhzaU',
                 'messages' => [
-                    ['role' => 'system', 'content' => 'Kamu adalah asisten pertanian cerdas bernama KawalTani. Berikan informasi umum, tips, dan edukasi seputar pertanian. Jawablah dengan ramah dan informatif.'],
+                    ['role' => 'system', 'content' => 'Kamu adalah asisten pertanian cerdas bernama KawalTani. Jawablah hanya pertanyaan yang berkaitan dengan pertanian, lahan, cuaca, kondisi tanaman, atau data dari sensor. Jika pertanyaannya di luar topik pertanian, tolak dengan sopan dan katakan bahwa kamu hanya melayani pertanyaan seputar pertanian.'],
                     ['role' => 'user', 'content' => $message],
                 ],
             ]);
@@ -146,12 +146,10 @@ class ChatbotController extends Controller
     private function handleDataQuery(string $message, string $chatName, $user): JsonResponse
     {
         try {
-            // 1. Ambil tanggal dari pertanyaan, default = hari ini
             $targetDate = $this->extractDateFromMessage($message) ?? Carbon::now()->toDateString();
 
             Log::info("🔍 Permintaan data untuk tanggal: $targetDate oleh user {$user->user_id}");
 
-            // 2. Ambil semua data sensor dari controller (data mentah harian)
             $sensorData = \App\Http\Controllers\Riwayat2Controller::getSensorData($user->user_id);
 
             if (empty($sensorData)) {
@@ -160,7 +158,6 @@ class ChatbotController extends Controller
                 ], 500);
             }
 
-            // 3. Filter hanya data dari tanggal yang diminta
             $filtered = collect($sensorData)->filter(function ($item) use ($targetDate) {
                 return $item['tanggal'] === $targetDate;
             });
@@ -172,7 +169,6 @@ class ChatbotController extends Controller
                 ], 200);
             }
 
-            // 4. Filter sensor penting (exclude battery, solar, current, dll)
             $excludedKeywords = ['battery', 'battrery', 'solar', 'load voltage', 'current', 'panel'];
             $filtered = $filtered->filter(function ($item) use ($excludedKeywords) {
                 foreach ($excludedKeywords as $keyword) {
@@ -183,7 +179,6 @@ class ChatbotController extends Controller
                 return true;
             });
 
-            // 5. Hitung rata-rata nilai per sensor
             $grouped = $filtered->groupBy('sensor')->map(function ($items, $sensorName) {
                 $avg = collect($items)->avg('nilai');
                 return [
@@ -192,17 +187,14 @@ class ChatbotController extends Controller
                 ];
             })->values();
 
-            // 6. Buat prompt ke OpenAI
             $summaryPrompt = "Berikut adalah data rata-rata sensor lahan pada tanggal $targetDate:\n";
             foreach ($grouped as $sensorInfo) {
                 $summaryPrompt .= "- {$sensorInfo['sensor']}: {$sensorInfo['rata_rata']}\n";
             }
             $summaryPrompt .= "\nTolong buatkan ringkasan kondisi lahan dari data tersebut dalam bentuk paragraf ringkas, ramah, dan mudah dipahami petani.";
 
-            // 7. Kirim ke OpenAI
             $formattedResponse = $this->sendGeneralMessageToOpenAI($summaryPrompt);
 
-            // 8. Simpan ke DB
             $session = ChatSession::firstOrCreate([
                 'user_id' => $user->user_id,
                 'name_chat' => $chatName,
@@ -291,7 +283,7 @@ class ChatbotController extends Controller
             return "$year-$month-$day";
         }
 
-        return null; 
+        return null;
     }
 
     public function getHistoryByNameChat($nameChat): JsonResponse
@@ -444,7 +436,7 @@ class ChatbotController extends Controller
             ])->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'ft:gpt-3.5-turbo-0125:personal:kawaltani-v2:BgSwhzaU',
                 'messages' => [
-                    ['role' => 'system', 'content' => 'Kamu adalah asisten pertanian cerdas bernama KawalTani. Berikan informasi umum, tips, dan edukasi seputar pertanian. Jawablah dengan ramah dan informatif.'],
+                    ['role' => 'system', 'content' => 'Kamu adalah asisten pertanian cerdas bernama KawalTani. Jawablah hanya pertanyaan yang berkaitan dengan pertanian, lahan, cuaca, kondisi tanaman, atau data dari sensor. Jika pertanyaannya di luar topik pertanian, tolak dengan sopan dan katakan bahwa kamu hanya melayani pertanyaan seputar pertanian.'],
                     ['role' => 'user', 'content' => $message],
                 ],
             ]);

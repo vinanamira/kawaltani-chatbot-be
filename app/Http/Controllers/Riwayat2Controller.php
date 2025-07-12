@@ -148,7 +148,7 @@ class Riwayat2Controller extends Controller
 
         $rawData = $query->orderBy('read_date', 'desc')->get();
 
-        // Mapping menjadi array struktur yang enak dibaca oleh AI
+        // Mapping menjadi array struktur 
         $result = $rawData->map(function ($item) {
             $sensorName = DB::table('td_device_sensors')
                 ->where('ds_id', $item->ds_id)

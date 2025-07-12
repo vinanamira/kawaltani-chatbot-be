@@ -129,7 +129,8 @@ class ChatbotController extends Controller
             'nilai terendah',
             'siram',
             'butuh air',
-            'kondisi sawah'
+            'kondisi sawah',
+            'data'
         ];
 
         $lowerMessage = strtolower($message);

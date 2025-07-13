@@ -147,68 +147,77 @@ class ChatbotController extends Controller
     private function handleDataQuery(string $message, string $chatName, $user): JsonResponse
     {
         try {
-            $targetDate = $this->extractDateFromMessage($message) ?? Carbon::now()->toDateString();
-            $allSensorData = \App\Http\Controllers\Riwayat2Controller::getSensorData($user->user_id, $targetDate);
+            $requestedDates = $this->extractAllDatesFromMessage($message);
+            Log::info("📅 Tanggal yang terdeteksi:", $requestedDates);
 
-            if ($allSensorData->isEmpty()) {
-                return response()->json(['message' => $message, 'response' => "Maaf, saya tidak menemukan data sensor pada tanggal $targetDate.", 'name_chat' => $chatName]);
-            }
+            $masterPromptData = [];
 
-            $excludedKeywords = ['battery', 'battrery', 'solar', 'load voltage', 'current', 'panel'];
-            $filteredData = $allSensorData->filter(function ($item) use ($excludedKeywords) {
-                foreach ($excludedKeywords as $keyword) {
-                    if (Str::contains(Str::lower($item['sensor']), $keyword)) return false;
+            foreach ($requestedDates as $targetDate) {
+                $allSensorDataForDate = \App\Http\Controllers\Riwayat2Controller::getSensorData($user->user_id, $targetDate);
+
+                if ($allSensorDataForDate->isEmpty()) {
+                    Log::info("📭 Tidak ada data untuk tanggal $targetDate, melanjutkan ke tanggal berikutnya.");
+                    continue; 
                 }
-                return true;
-            });
 
-            $requestedPairs = $this->parseSensorAreaPairs($message);
-            $finalData = collect(); // Inisialisasi koleksi kosong
+                $excludedKeywords = ['battery', 'battrery', 'solar', 'load voltage', 'current', 'panel'];
+                $filteredData = $allSensorDataForDate->filter(function ($item) use ($excludedKeywords) {
+                    foreach ($excludedKeywords as $keyword) {
+                        if (Str::contains(Str::lower($item['sensor']), $keyword)) return false;
+                    }
+                    return true;
+                });
 
-            if (!empty($requestedPairs)) {
-                // Skenario 1: Pengguna memberikan permintaan spesifik (dengan area)
-                Log::info("🔎 Mode: Permintaan Spesifik [Sensor, Area] terdeteksi.", $requestedPairs);
+                $requestedPairs = $this->parseSensorAreaPairs($message);
+                $dataForThisDate = collect();
 
-                foreach ($requestedPairs as $pair) {
-                    [$sensorKeyword, $areaNumber] = $pair;
-                    $foundItem = $filteredData->first(function ($item) use ($sensorKeyword, $areaNumber) {
-                        $sensorName = Str::lower($item['sensor']);
-                        $areaMatch = Str::contains($sensorName, 'area ' . $areaNumber);
-                        $pattern = preg_quote($sensorKeyword, '/');
-                        if ($sensorKeyword === 'temp soil') $pattern = 'temp\.? ?soil';
-                        $sensorMatch = preg_match('/\b' . $pattern . '\b/i', $sensorName);
-                        return $areaMatch && $sensorMatch;
-                    });
-                    if ($foundItem) $finalData->push($foundItem);
+                if (!empty($requestedPairs)) {
+                    foreach ($requestedPairs as $pair) {
+                        [$sensorKeyword, $areaNumber] = $pair;
+                        $foundItem = $filteredData->first(function ($item) use ($sensorKeyword, $areaNumber) {
+                            $sensorName = Str::lower($item['sensor']);
+                            $areaMatch = Str::contains($sensorName, 'area ' . $areaNumber);
+                            $pattern = preg_quote($sensorKeyword, '/');
+                            if ($sensorKeyword === 'temp soil') $pattern = 'temp\.? ?soil';
+                            $sensorMatch = preg_match('/\b' . $pattern . '\b/i', $sensorName);
+                            return $areaMatch && $sensorMatch;
+                        });
+                        if ($foundItem) $dataForThisDate->push($foundItem);
+                    }
+                } else {
+                    $generalKeywords = $this->extractSensorKeywordsFromMessage($message);
+                    if (!empty($generalKeywords)) {
+                        $dataForThisDate = $filteredData->filter(function ($item) use ($generalKeywords) {
+                            $sensorName = Str::lower($item['sensor']);
+                            foreach ($generalKeywords as $keyword) {
+                                $pattern = preg_quote($keyword, '/');
+                                if ($keyword === 'temp soil') $pattern = 'temp\.? ?soil';
+                                if (preg_match('/\b' . $pattern . '\b/i', $sensorName)) return true;
+                            }
+                            return false;
+                        });
+                    }
                 }
-            } else {
-                // Skenario 2 : Pengguna hanya menyebut sensor, tanpa area
-                Log::info("⚠️ Mode: Tidak ada pasangan spesifik, menjalankan fallback pencarian sensor umum.");
-                $generalKeywords = $this->extractSensorKeywordsFromMessage($message);
 
-                if (!empty($generalKeywords)) {
-                    Log::info("🔎 Sensor umum yang terdeteksi:", $generalKeywords);
-                    $finalData = $filteredData->filter(function ($item) use ($generalKeywords) {
-                        $sensorName = Str::lower($item['sensor']);
-                        foreach ($generalKeywords as $keyword) {
-                            $pattern = preg_quote($keyword, '/');
-                            if ($keyword === 'temp soil') $pattern = 'temp\.? ?soil';
-                            if (preg_match('/\b' . $pattern . '\b/i', $sensorName)) return true;
-                        }
-                        return false;
-                    });
+                if ($dataForThisDate->isNotEmpty()) {
+                    $masterPromptData[$targetDate] = $dataForThisDate;
                 }
             }
 
-            if ($finalData->isEmpty()) {
-                return response()->json(['message' => $message, 'response' => "Maaf, saya tidak dapat memahami atau menemukan data untuk sensor yang Anda minta.", 'name_chat' => $chatName]);
+            if (empty($masterPromptData)) {
+                return response()->json(['message' => $message, 'response' => "Maaf, saya tidak dapat menemukan data apa pun untuk tanggal dan sensor yang Anda minta.", 'name_chat' => $chatName]);
             }
 
-            $summaryPrompt = "Berikut adalah data sensor lahan (nilai tertinggi) tanggal $targetDate berdasarkan permintaan spesifik:\n";
-            foreach ($finalData->unique()->values() as $sensorInfo) {
-                $summaryPrompt .= "- {$sensorInfo['sensor']}: {$sensorInfo['nilai']}\n";
+            // Buat prompt komprehensif dari semua data yang terkumpul
+            $summaryPrompt = "Berikut adalah data sensor lahan (nilai tertinggi) berdasarkan permintaan spesifik dari beberapa tanggal:\n";
+            foreach ($masterPromptData as $date => $dataList) {
+                $formattedDate = Carbon::parse($date)->isoFormat('D MMMM YYYY');
+                $summaryPrompt .= "\nUntuk tanggal $formattedDate:\n";
+                foreach ($dataList->unique()->values() as $sensorInfo) {
+                    $summaryPrompt .= "- {$sensorInfo['sensor']}: {$sensorInfo['nilai']}\n";
+                }
             }
-            $summaryPrompt .= "\nTolong buatkan ringkasan kondisi lahan dari data tersebut dalam bentuk paragraf. Penting: Untuk setiap nilai sensor, sebutkan secara eksplisit nama sensor, nilai angka, beserta areanya (contoh: 'kandungan Nitrogen di area 1', 'suhu tanah di area 2'). Buatlah ringkasan yang ramah dan mudah dipahami petani.";
+            $summaryPrompt .= "\nTolong buatkan ringkasan kondisi lahan dari semua data tersebut dalam bentuk paragraf. Penting: Pisahkan ringkasan untuk setiap tanggal dan sebutkan secara eksplisit nama sensor beserta areanya. Buatlah ringkasan yang ramah dan mudah dipahami petani.";
 
             $formattedResponse = $this->sendGeneralMessageToOpenAI($summaryPrompt);
             $session = ChatSession::firstOrCreate(['user_id' => $user->user_id, 'name_chat' => $chatName]);
@@ -229,7 +238,7 @@ class ChatbotController extends Controller
 
         $sensorMap = [
             'kelembaban tanah'      => 'humidity soil',
-            'suhu tanah'            => 'temp soil',      
+            'suhu tanah'            => 'temp soil',
             'kelembaban lingkungan' => 'environtment humidity',
             'suhu lingkungan'       => 'env temp',
             'curah hujan'           => 'curah hujan',
@@ -312,16 +321,14 @@ class ChatbotController extends Controller
         return array_reverse($pairs);
     }
 
-    private function extractDateFromMessage(string $message): ?string
+    private function extractAllDatesFromMessage(string $message): array
     {
-        $message = strtolower($message);
+        $lowerMessage = strtolower($message);
         $today = now();
+        $foundDates = [];
 
-        if (str_contains($message, 'hari ini')) {
-            return $today->toDateString(); // format Y-m-d
-        } elseif (str_contains($message, 'kemarin')) {
-            return $today->subDay()->toDateString();
-        }
+        if (str_contains($lowerMessage, 'hari ini')) $foundDates[] = $today->toDateString();
+        if (str_contains($lowerMessage, 'kemarin')) $foundDates[] = $today->clone()->subDay()->toDateString();
 
         $bulanMap = [
             'januari' => '01',
@@ -338,41 +345,29 @@ class ChatbotController extends Controller
             'desember' => '12',
         ];
 
-        // Format lengkap: Contoh "19 Mei 2025"
-        foreach ($bulanMap as $bulanText => $bulanAngka) {
-            if (preg_match("/(\d{1,2})\s+$bulanText\s+(\d{4})/", $message, $match)) {
+        if (preg_match_all("/(\d{1,2})\s+(" . implode('|', array_keys($bulanMap)) . ")(?:\s+(\d{4}))?/i", $lowerMessage, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $year = $match[3] ?? $today->year;
+                $month = $bulanMap[strtolower($match[2])];
                 $day = str_pad($match[1], 2, '0', STR_PAD_LEFT);
-                $year = $match[2];
-                return "$year-$bulanAngka-$day";
+                $foundDates[] = "$year-$month-$day";
             }
         }
 
-        // Format tanpa tahun: Contoh "19 Mei"
-        foreach ($bulanMap as $bulanText => $bulanAngka) {
-            if (preg_match("/(\d{1,2})\s+$bulanText/", $message, $match)) {
+        if (preg_match_all("/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/", $lowerMessage, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $year = $match[3];
+                $month = str_pad($match[2], 2, '0', STR_PAD_LEFT);
                 $day = str_pad($match[1], 2, '0', STR_PAD_LEFT);
-                $year = $today->year;
-                return "$year-$bulanAngka-$day";
+                $foundDates[] = "$year-$month-$day";
             }
         }
 
-        // Format angka: "12/07/2024" atau "12-07-2024"
-        if (preg_match("/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/", $message, $match)) {
-            $day = str_pad($match[1], 2, '0', STR_PAD_LEFT);
-            $month = str_pad($match[2], 2, '0', STR_PAD_LEFT);
-            $year = $match[3];
-            return "$year-$month-$day";
+        if (empty($foundDates)) {
+            $foundDates[] = $today->toDateString();
         }
 
-        // Format angka: "12/07" atau "12-07" tanpa tahun
-        if (preg_match("/(\d{1,2})[\/\-](\d{1,2})/", $message, $match)) {
-            $day = str_pad($match[1], 2, '0', STR_PAD_LEFT);
-            $month = str_pad($match[2], 2, '0', STR_PAD_LEFT);
-            $year = $today->year;
-            return "$year-$month-$day";
-        }
-
-        return null;
+        return array_unique($foundDates);
     }
 
     public function getHistoryByNameChat($nameChat): JsonResponse

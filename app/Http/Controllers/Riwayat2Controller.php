@@ -118,50 +118,42 @@ class Riwayat2Controller extends Controller
     // Codingan Dibawah Hanya Untuk Keperluan di Fitur Chatbot
     public static function getSensorData($userId, $date = null)
     {
-        // Ambil site_id berdasarkan user_id
+        $targetDate = $date ?? Carbon::now()->toDateString();
+
         $siteId = DB::table('tm_device')
             ->where('user_id', $userId)
             ->value('site_id');
 
         if (!$siteId) {
-            Log::warning("📛 Site ID tidak ditemukan untuk user_id: " . $userId);
-            return [];
+            Log::warning("📛 [Chatbot] Site ID tidak ditemukan untuk user_id: " . $userId);
+            return collect();
         }
 
-        // Ambil seluruh sensor ID untuk site ini
-        $sensorIds = DB::table('td_device_sensors')
-            ->join('tm_device', 'tm_device.dev_id', '=', 'td_device_sensors.dev_id')
+        // MODIFIKASI: Tentukan rentang waktu untuk seharian penuh
+        $startTime = Carbon::parse($targetDate)->startOfDay()->toDateTimeString();
+        $endTime = Carbon::parse($targetDate)->endOfDay()->toDateTimeString();
+
+        Log::info("🔍 [Chatbot] Mencari data MAX untuk user_id: $userId pada rentang $startTime - $endTime");
+
+        $sensorData = DB::table('tm_sensor_read')
+            ->join('td_device_sensors', 'tm_sensor_read.ds_id', '=', 'td_device_sensors.ds_id')
+            ->join('tm_device', 'td_device_sensors.dev_id', '=', 'tm_device.dev_id')
             ->where('tm_device.site_id', $siteId)
-            ->pluck('td_device_sensors.ds_id');
+            // MODIFIKASI: Gunakan rentang waktu seharian penuh
+            ->whereBetween('tm_sensor_read.read_date', [$startTime, $endTime])
+            ->select(
+                'td_device_sensors.ds_name as sensor',
+                DB::raw('MAX(tm_sensor_read.read_value) as nilai')
+            )
+            // MODIFIKASI: Group berdasarkan tanggal saja, bukan waktu
+            ->groupBy('td_device_sensors.ds_name')
+            ->get();
 
-        if ($sensorIds->isEmpty()) {
-            Log::warning("📛 Tidak ada sensor ditemukan di site: " . $siteId);
-            return [];
-        }
-
-        $query = DB::table('tm_sensor_read')
-            ->whereIn('ds_id', $sensorIds);
-
-        if ($date) {
-            $query->whereDate('read_date', $date);
-        }
-
-        $rawData = $query->orderBy('read_date', 'desc')->get();
-
-        // Mapping menjadi array struktur 
-        $result = $rawData->map(function ($item) {
-            $sensorName = DB::table('td_device_sensors')
-                ->where('ds_id', $item->ds_id)
-                ->value('ds_name');
-
+        return $sensorData->map(function ($item) {
             return [
-                'tanggal' => Carbon::parse($item->read_date)->toDateString(),
-                'waktu' => Carbon::parse($item->read_date)->format('H:i'),
-                'sensor' => $sensorName ?? $item->ds_id,
-                'nilai' => round($item->read_value, 2),
+                'sensor' => $item->sensor,
+                'nilai' => round($item->nilai, 2),
             ];
         });
-
-        return $result;
     }
 }

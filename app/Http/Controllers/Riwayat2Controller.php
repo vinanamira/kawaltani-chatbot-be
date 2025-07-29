@@ -129,23 +129,20 @@ class Riwayat2Controller extends Controller
             return collect();
         }
 
-        // MODIFIKASI: Tentukan rentang waktu untuk seharian penuh
         $startTime = Carbon::parse($targetDate)->startOfDay()->toDateTimeString();
         $endTime = Carbon::parse($targetDate)->endOfDay()->toDateTimeString();
 
-        Log::info("🔍 [Chatbot] Mencari data MAX untuk user_id: $userId pada rentang $startTime - $endTime");
+        Log::info("Chatbot Mencari data MAX untuk user_id: $userId pada rentang $startTime - $endTime");
 
         $sensorData = DB::table('tm_sensor_read')
             ->join('td_device_sensors', 'tm_sensor_read.ds_id', '=', 'td_device_sensors.ds_id')
             ->join('tm_device', 'td_device_sensors.dev_id', '=', 'tm_device.dev_id')
             ->where('tm_device.site_id', $siteId)
-            // MODIFIKASI: Gunakan rentang waktu seharian penuh
             ->whereBetween('tm_sensor_read.read_date', [$startTime, $endTime])
             ->select(
                 'td_device_sensors.ds_name as sensor',
                 DB::raw('MAX(tm_sensor_read.read_value) as nilai')
             )
-            // MODIFIKASI: Group berdasarkan tanggal saja, bukan waktu
             ->groupBy('td_device_sensors.ds_name')
             ->get();
 

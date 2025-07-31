@@ -9,90 +9,168 @@
 </p>
 
 <p align="center">
-    <b>Simple description of what your project do or how to use it.</b>
+    <b>Kawaltani is an IoT-based system developed to support the monitoring of agricultural land and plant growth. This system provides real-time information on location, plant conditions, and land conditions, as well as alerts and action recommendations when discrepancies arise. With features such as pattern visualization, data trends, and a chatbot, Kawaltani is designed to assist farmers in land management more efficiently and based on data. </b>
 </p>
 
-<h2 id="technologies">💻 Technologies</h2>
+<h2 id="technologies">Technology</h2>
 
-- list of all technologies you used
-- Java
-- MongoDB
-- NodeJS
+- Laravel
+- MySQL
+- OpenAI
 
-<h2 id="started">🚀 Getting started</h2>
-
-Here you describe how to run your project locally
+<h2 id="started">Getting started</h2>
 
 <h3>Prerequisites</h3>
 
-Here you list all prerequisites necessary for running your project. For example:
+Here you list all prerequisites necessary for running the project:
 
-- [NodeJS](https://github.com/)
-- [Git 2](https://github.com)
+- [Laravel](https://laravel.com/docs/11.x/)
+- [OpenAI](https://platform.openai.com/docs/overview)
 
-<h3>Cloning</h3>
+## How to use
 
-How to clone your project
+1. **Set up the OpenAI API:**
 
-```bash
-git clone your-project-url-in-github
-```
+   - If you're new to the OpenAI API, [sign up for an account](https://platform.openai.com/signup).
+   - Follow the [Quickstart](https://platform.openai.com/docs/quickstart) to retrieve your API key.
 
-<h3>Config .env variables</h2>
+2. **Set the OpenAI API key:**
 
-Use the `.env.example` as reference to create your configuration file `.env` with your AWS Credentials
+   2 options:
 
-```yaml
-NODE_AWS_REGION=us-east-1
-NODE_AWS_KEY_ID={YOUR_AWS_KEY_ID}
-NODE_AWS_SECRET={YOUR_AWS_SECRET}
-```
+   - Set the `OPENAI_API_KEY` environment variable [globally in your system](https://platform.openai.com/docs/libraries#create-and-export-an-api-key)
+   - Set the `OPENAI_API_KEY` environment variable in the project: Create a `.env` file at the root of the project and add the following line
 
-<h3>Starting</h3>
+    ```bash
+   OPENAI_API_KEY=<your_api_key>
+   ```
 
-How to start your project
+4. **Clone the Repository:**
 
-```bash
-cd project-name
-npm some-command-to-run
-```
+   ```bash
+   git clone https://github.com/vinanamira/kawaltani-chatbot-be.git
+   ```
+   
+5. **Enter the Project Directory:**
+
+   After the cloning process is complete, enter the folder of the newly created project:
+
+   ```bash
+   cd kawaltani-chatbot-be
+   ```
+
+6. **Install dependencies:**
+
+   Run in the project root:
+
+   ```bash
+   composer install
+   ```
+
+7. **Run the app:**
+
+   ```bash
+   php artisan serve
+   ```
+
+   The app will be available at [`http://127.0.0.1:8000`](http://127.0.0.1:8000).
 
 <h2 id="routes">📍 API Endpoints</h2>
 
-Here you can list the main routes of your API, and what are their expected request bodies.
+Here is a list of the main API routes with the expected request bodies.
 ​
-| route               | description                                          
+| Route               | Description                                          
 |----------------------|-----------------------------------------------------
-| <kbd>GET /authenticate</kbd>     | retrieves user info see [response details](#get-auth-detail)
-| <kbd>POST /authenticate</kbd>     | authenticate user into the api see [request details](#post-auth-detail)
+| <kbd>POST /api/chat/send</kbd>     | Sending a new message and getting a reply from the AI [request details](#post-send-detail)
+| <kbd>GET /api/chat/names</kbd>     | Taking all titles from the conversation history [response details](#get-all-chat-detail)
+| <kbd>GET /api/chat/history/{name_chat}</kbd>     | Taking message history details from a conversation based on its title [response details](#get-chat-detail)
+| <kbd>DELETE /api/chat/history/{name_chat}</kbd>     | Deleting a conversation history based on its title [response details](#delete-chat-detail)
+| <kbd>PUT /api/chat/rename-chat/{name_chat}</kbd>     | Changing the title of an existing conversation history [request details](#rename-chat-detail)
 
-<h3 id="get-auth-detail">GET /authenticate</h3>
-
-**RESPONSE**
-```json
-{
-  "name": "Fernanda Kipper",
-  "age": 20,
-  "email": "her-email@gmail.com"
-}
-```
-
-<h3 id="post-auth-detail">POST /authenticate</h3>
+<h3 id="post-send-detail">POST /api/chat/send</h3>
 
 **REQUEST**
 ```json
 {
-  "username": "fernandakipper",
-  "password": "4444444"
+  "message": "Saya mau melihat data pH  di area 2 tanggal 19 Mei",
+  "name_chat": ""
 }
 ```
 
 **RESPONSE**
 ```json
 {
-  "token": "OwoMRHsaQwyAgVoc3OXmL1JhMVUYXGGBbCTK0GBgiYitwQwjf0gVoBmkbuyy0pSi"
+    "message": "Saya mau melihat data pH  di area 2 tanggal 19 Mei",
+    "response": "Ringkasan Kondisi Lahan:\n\nTanggal 19 Mei 2025:\n- Sensor pH Area 2: Terdapat lonjakan pH hingga mencapai angka 9. Kemungkinan area lahan di sekitar sensor tersebut saat ini sedang menjadi sangat basa. Disarankan untuk dilakukan pengecekan lebih lanjut terkait penyebab dan tindakan rektifkasinya.",
+    "name_chat": "Saya mau melihat data pH  di area 2 tang..."
 }
 ```
+<h3 id="get-all-chat-detail">GET /api/chat/names</h3>
+
+**RESPONSE**
+```json
+[
+    {
+        "session_id": 3,
+        "name_chat": "Saya mau melihat data pH  di area 2 tang...",
+        "updated_at": "2025-07-31T07:22:41.000000Z"
+    },
+    {
+        "session_id": 2,
+        "name_chat": "TestWhitebox",
+        "updated_at": "2025-07-31T07:21:54.000000Z"
+    },
+    {
+        "session_id": 1,
+        "name_chat": "Testing",
+        "updated_at": "2025-07-29T19:47:31.000000Z"
+    }
+]
+```
+
+<h3 id="get-chat-detail">GET /api/chat/history/{name_chat}</h3>
+
+**RESPONSE**
+```json
+[
+    {
+        "message": "Saya mau melihat data pH  di area 2 tanggal 19 Mei",
+        "response": "Pada tanggal 19 Mei 2025, data sensor menunjukkan kondisi lahan sebagai berikut: PH pada area 2 mencapai angka 9. Temuan ini mengindikasikan tingkat keasaman yang relatif tinggi, yang sebaiknya dijaga agar tidak terus meningkat dan berdampak buruk pada ketersediaan hara bagi tanaman.",
+        "sent_at": "2025-07-31T07:21:54.000000Z"
+    },
+    {
+        "message": "Saya mau melihat data pH  di area 2 tanggal 19 Mei",
+        "response": "Ringkasan Kondisi Lahan:\nPada tanggal 19 Mei 2025, di area 2, nilai pH mencapai tingkat tertinggi dengan angka 9. Data ini menandakan kondisi lahan sedikit basa pada area tersebut. Informasi ini penting untuk pemantauan kesehatan dan kebutuhan perawatan tanaman, terutama tanaman tertentu yang peka terhadap keasaman tanah.",
+        "sent_at": "2025-07-31T07:22:27.000000Z"
+    }
+]
+```
+
+<h3 id="delete-chat-detail">DELETE /api/chat/history/{name_chat}</h3>
+
+**RESPONSE**
+```json
+{
+    "message": "Percakapan berhasil dihapus."
+}
+```
+
+<h3 id="#rename-chat-detail">PUT /api/chat/rename-chat/{name_chat}</h3>
+
+**REQUEST**
+```json
+{
+  "newName": "Data tanggal 19 Mei"
+}
+```
+
+**RESPONSE**
+```json
+{
+    "message": "Nama chat berhasil diganti."
+}
+```
+
 
 <h2 id="colab">🤝 Collaborators</h2>
 
@@ -101,43 +179,24 @@ Special thank you for all people that contributed for this project.
 <table>
   <tr>
     <td align="center">
-      <a href="#">
-        <img src="https://avatars.githubusercontent.com/u/61896274?v=4" width="100px;" alt="Fernanda Kipper Profile Picture"/><br>
+      <a href="https://github.com/annisasha">
+        <img src="https://avatars.githubusercontent.com/u/152659249?v=4" width="100px;" alt="Fernanda Kipper Profile Picture"/><br>
         <sub>
-          <b>Fernanda Kipper</b>
+          <b>Annisa Shafira</b>
         </sub>
       </a>
     </td>
     <td align="center">
-      <a href="#">
-        <img src="https://t.ctcdn.com.br/n7eZ74KAcU3iYwnQ89-ul9txVxc=/400x400/smart/filters:format(webp)/i490769.jpeg" width="100px;" alt="Elon Musk Picture"/><br>
+      <a href="https://github.com/shalmanrafli30">
+        <img src="https://avatars.githubusercontent.com/u/151373806?v=4" width="100px;" alt="Shalman Rafli Picture"/><br>
         <sub>
-          <b>Elon Musk</b>
+          <b>Shalman Rafli</b>
         </sub>
       </a>
     </td>
-    <td align="center">
-      <a href="#">
-        <img src="https://miro.medium.com/max/360/0*1SkS3mSorArvY9kS.jpg" width="100px;" alt="Foto do Steve Jobs"/><br>
-        <sub>
-          <b>Steve Jobs</b>
-        </sub>
-      </a>
-    </td>
-  </tr>
 </table>
 
-<h2 id="contribute">📫 Contribute</h2>
-
-Here you will explain how other developers can contribute to your project. For example, explaining how can create their branches, which patterns to follow and how to open an pull request
-
-1. `git clone https://github.com/Fernanda-Kipper/text-editor.git`
-2. `git checkout -b feature/NAME`
-3. Follow commit patterns
-4. Open a Pull Request explaining the problem solved or feature made, if exists, append screenshot of visual modifications and wait for the review!
 
 <h3>Documentations that might help</h3>
 
-[📝 How to create a Pull Request](https://www.atlassian.com/br/git/tutorials/making-a-pull-request)
-
-[💾 Commit pattern](https://gist.github.com/joshbuchea/6f47e86d2510bce28f8e7f42ae84c716)
+OpenAI PHP Client Documentation : https://github.com/openai-php/client

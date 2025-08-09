@@ -6,6 +6,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Carbon\Carbon;
+use App\Models\Chatbot;
 use App\Models\ChatSession;
 use App\Models\ChatUser;
 use App\Models\ChatResponse;
@@ -39,24 +40,10 @@ class ChatbotController extends Controller
 
         $response = $this->sendGeneralMessageToOpenAI($message);
 
-        $session = ChatSession::where('user_id', $user->user_id)
-            ->where('name_chat', $chatName)
-            ->first();
-
-        if (! $session) {
-            $session = ChatSession::create([
-                'user_id' => $user->user_id,
-                'name_chat' => $chatName,
-            ]);
-        }
-
-        $messageModel = ChatUser::create([
-            'session_id' => $session->session_id,
+        Chatbot::create([
+            'user_id' => $user->user_id,
+            'name_chat' => $chatName,
             'message' => $message,
-        ]);
-
-        ChatResponse::create([
-            'mess_id' => $messageModel->mess_id,
             'response' => $response,
         ]);
 
@@ -157,7 +144,7 @@ class ChatbotController extends Controller
 
                 if ($allSensorDataForDate->isEmpty()) {
                     Log::info("📭 Tidak ada data untuk tanggal $targetDate, melanjutkan ke tanggal berikutnya.");
-                    continue; 
+                    continue;
                 }
 
                 $excludedKeywords = ['battery', 'battrery', 'solar', 'load voltage', 'current', 'panel'];
@@ -208,7 +195,6 @@ class ChatbotController extends Controller
                 return response()->json(['message' => $message, 'response' => "Maaf, saya tidak dapat menemukan data apa pun untuk tanggal dan sensor yang Anda minta.", 'name_chat' => $chatName]);
             }
 
-            // Buat prompt komprehensif dari semua data yang terkumpul
             $summaryPrompt = "Berikut adalah data sensor lahan (nilai tertinggi) berdasarkan permintaan spesifik dari beberapa tanggal:\n";
             foreach ($masterPromptData as $date => $dataList) {
                 $formattedDate = Carbon::parse($date)->isoFormat('D MMMM YYYY');
@@ -277,7 +263,6 @@ class ChatbotController extends Controller
     private function extractAreaFromMessage(string $message): ?int
     {
         $lowerMessage = strtolower($message);
-        // Ini agar pengguna bisa bertanya mengenai 1 area saja
         if (preg_match('/area\s*(\d+)/', $lowerMessage, $matches)) {
             return (int)$matches[1];
         }
@@ -288,7 +273,6 @@ class ChatbotController extends Controller
     {
         $cleanedMessage = str_replace(['saya melihat data lahan', 'di tanggal'], '', $message);
 
-        // Pecah pesan berdasarkan koma dan kata "dan"
         $parts = preg_split('/, dan|,| dan /', $cleanedMessage, -1, PREG_SPLIT_NO_EMPTY);
 
         $pairs = [];
@@ -380,24 +364,16 @@ class ChatbotController extends Controller
                 ], 401);
             }
 
-            $session = ChatSession::where('user_id', $user->user_id)
+            $history = Chatbot::where('user_id', $user->user_id)
                 ->where('name_chat', $nameChat)
-                ->with(['messages.response']) // eager load semua pesan & balasannya
-                ->first();
+                ->orderBy('created_at')
+                ->get();
 
-            if (!$session) {
-                return response()->json(null, 204); // No Content
+            if ($history->isEmpty()) {
+                return response()->json([], 204);
             }
 
-            $data = $session->messages->map(function ($message) {
-                return [
-                    'message' => $message->message,
-                    'response' => $message->response->response ?? null,
-                    'sent_at' => $message->created_at,
-                ];
-            });
-
-            return response()->json($data);
+            return response()->json($history);
         } catch (\Exception $e) {
             Log::error("Database Error on getHistoryByNameChat: " . $e->getMessage());
             return response()->json([
@@ -414,17 +390,11 @@ class ChatbotController extends Controller
         }
 
         try {
-            $session = ChatSession::where('user_id', $user->user_id)
+            Chatbot::where('user_id', $user->user_id)
                 ->where('name_chat', $nameChat)
-                ->first();
+                ->delete();
 
-            if (!$session) {
-                return response()->json(['message' => 'Sesi chat tidak ditemukan.'], 404);
-            }
-
-            $session->delete(); // Akan otomatis hapus pesan & response karena pakai ON DELETE CASCADE
-
-            return response()->json(['message' => 'Percakapan berhasil dihapus.']);
+            return response()->json(['message' => 'Percakapan berhasil dihapus']);
         } catch (\Exception $e) {
             Log::error("Delete Chat Error: " . $e->getMessage());
             return response()->json(['message' => 'Terjadi kesalahan saat menghapus sesi chat.'], 500);
@@ -442,11 +412,13 @@ class ChatbotController extends Controller
         }
 
         try {
-            $chats = ChatSession::where('user_id', $user->user_id)
-                ->orderByDesc('updated_at')
-                ->get(['session_id', 'name_chat', 'updated_at']); // hanya ambil kolom yang dibutuhkan
+            $latestChats = Chatbot::selectRaw('MAX(id) as id, name_chat, MAX(created_at) as created_at')
+                ->where('user_id', $user->user_id)
+                ->groupBy('name_chat')
+                ->orderByDesc('created_at')
+                ->get();
 
-            return response()->json($chats);
+            return response()->json($latestChats);
         } catch (\Exception $e) {
             Log::error("ListChats Error: " . $e->getMessage());
             return response()->json([
@@ -467,26 +439,15 @@ class ChatbotController extends Controller
         }
 
         try {
-            $isExist = ChatSession::where('user_id', $user->user_id)
-                ->where('name_chat', $request->newName)
-                ->exists();
-
-            if ($isExist) {
+            if (Chatbot::where('user_id', $user->user_id)->where('name_chat', $request->newName)->exists()) {
                 return response()->json(['error' => 'Nama chat sudah digunakan oleh Anda'], 422);
             }
 
-            $session = ChatSession::where('user_id', $user->user_id)
+            Chatbot::where('user_id', $user->user_id)
                 ->where('name_chat', $nameChat)
-                ->first();
+                ->update(['name_chat' => $request->newName]);
 
-            if (!$session) {
-                return response()->json(['message' => 'Sesi chat tidak ditemukan.'], 404);
-            }
-
-            $session->name_chat = $request->newName;
-            $session->save();
-
-            return response()->json(['message' => 'Nama chat berhasil diganti.']);
+            return response()->json(['message' => 'Nama chat berhasil diganti']);
         } catch (\Exception $e) {
             Log::error("Rename Chat Error: " . $e->getMessage());
             return response()->json(['message' => 'Gagal mengganti nama sesi chat.'], 500);
@@ -527,19 +488,13 @@ class ChatbotController extends Controller
 
             $reply = $response['choices'][0]['message']['content'] ?? 'Tidak ada balasan.';
 
-            $session = ChatSession::create([
+            Chatbot::create([
                 'user_id'   => $userId,
                 'name_chat' => $chatName,
-            ]);
-
-            $messageModel = ChatUser::create([
-                'session_id' => $session->session_id,
-                'message'    => $message,
-            ]);
-
-            ChatResponse::create([
-                'mess_id'  => $messageModel->mess_id,
-                'response' => $reply,
+                'message'   => $message,
+                'response'  => $reply,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
 
             return response()->json([

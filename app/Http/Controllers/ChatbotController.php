@@ -7,9 +7,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Carbon\Carbon;
 use App\Models\Chatbot;
-use App\Models\ChatSession;
-use App\Models\ChatUser;
-use App\Models\ChatResponse;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -206,11 +203,19 @@ class ChatbotController extends Controller
             $summaryPrompt .= "\nTolong buatkan ringkasan kondisi lahan dari semua data tersebut dalam bentuk paragraf. Penting: Pisahkan ringkasan untuk setiap tanggal dan sebutkan secara eksplisit nama sensor beserta areanya. Buatlah ringkasan yang ramah dan mudah dipahami petani.";
 
             $formattedResponse = $this->sendGeneralMessageToOpenAI($summaryPrompt);
-            $session = ChatSession::firstOrCreate(['user_id' => $user->user_id, 'name_chat' => $chatName]);
-            $chatUser = ChatUser::create(['session_id' => $session->session_id, 'message' => $message]);
-            ChatResponse::create(['mess_id' => $chatUser->mess_id, 'response' => $formattedResponse]);
 
-            return response()->json(['message' => $message, 'response' => $formattedResponse, 'name_chat' => $chatName]);
+            Chatbot::create([
+                'user_id'   => $user->user_id,
+                'name_chat' => $chatName,
+                'message'   => $message,
+                'response'  => $formattedResponse
+            ]);
+
+            return response()->json([
+                'message'   => $message,
+                'response'  => $formattedResponse,
+                'name_chat' => $chatName
+            ]);
         } catch (\Throwable $e) {
             Log::error("handleDataQuery Error: " . $e->getMessage() . " on line " . $e->getLine());
             return response()->json(['message' => 'Maaf, sistem mengalami masalah saat memproses pertanyaan berbasis data.'], 500);

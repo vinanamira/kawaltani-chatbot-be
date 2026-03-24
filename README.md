@@ -4,7 +4,6 @@
  <a href="#tech">Technology</a> • 
  <a href="#started">Getting Started</a> • 
   <a href="#routes">API Endpoints</a> •
- <a href="#colab">Collaborators</a> 
 </p>
 
 <p align="center">
@@ -169,32 +168,6 @@ Here is a list of the main API routes with the expected request bodies.
     "message": "Nama chat berhasil diganti."
 }
 ```
-
-
-<h2 id="colab">🤝 Collaborators</h2>
-
-Special thank you for all people that contributed for this project.
-
-<table>
-  <tr>
-    <td align="center">
-      <a href="https://github.com/annisasha">
-        <img src="https://avatars.githubusercontent.com/u/152659249?v=4" width="100px;" alt="Fernanda Kipper Profile Picture"/><br>
-        <sub>
-          <b>Annisa Shafira</b>
-        </sub>
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://github.com/shalmanrafli30">
-        <img src="https://avatars.githubusercontent.com/u/151373806?v=4" width="100px;" alt="Shalman Rafli Picture"/><br>
-        <sub>
-          <b>Shalman Rafli</b>
-        </sub>
-      </a>
-    </td>
-</table>
-
 
 <h3>Documentations that might help</h3>
 
